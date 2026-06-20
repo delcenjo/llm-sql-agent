@@ -1,5 +1,7 @@
 # LLM SQL Agent
 
+![CI](https://github.com/delcenjo/llm-sql-agent/actions/workflows/ci.yml/badge.svg)
+
 A Claude-powered agent that answers natural-language questions about a SQL
 database. Instead of hard-coding queries, the model is given a set of **tools**
 and decides which to call — inspecting the schema, writing SQL and doing
