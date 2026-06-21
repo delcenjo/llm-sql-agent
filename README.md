@@ -2,91 +2,97 @@
 
 ![CI](https://github.com/delcenjo/llm-sql-agent/actions/workflows/ci.yml/badge.svg)
 
-An LLM-powered agent that answers natural-language questions about a SQL
-database. Instead of hard-coding queries, the model is given a set of **tools**
-and decides which to call - inspecting the schema, writing SQL and doing
-arithmetic - until it can answer the question.
+You ask a question in plain English, and the agent figures out the SQL on its own. There are no hand-written queries behind it: the model is handed a few tools and left to inspect the schema, write a SELECT, maybe do a bit of arithmetic, and come back with an answer.
 
-## How it works
+## A quick walk-through
 
-```
-question ─▶ LLM ─▶ tool call (get_schema / run_sql / calculator)
-                ▲                         │
-                └──── tool result ◀───────┘   (loop until the model answers)
-```
-
-The agent runs a tool-use loop: the LLM proposes a tool call, the toolbox
-executes it locally, the result is fed back, and the cycle repeats until the
-model produces a final answer (bounded by `MAX_STEPS`).
-
-## Tools
-
-| Tool          | Purpose                                             |
-| ------------- | --------------------------------------------------- |
-| `list_tables` | list the tables in the database                     |
-| `get_schema`  | return a table's columns and types                  |
-| `run_sql`     | run a **read-only** SELECT and return rows as JSON  |
-| `calculator`  | evaluate an arithmetic expression                   |
-
-### Safety
-
-`run_sql` is read-only by design: the connection is opened in SQLite read-only
-mode, only single `SELECT`/`WITH` statements are allowed, write keywords are
-rejected, and the result set is capped. The calculator evaluates a restricted
-arithmetic AST rather than using `eval`.
-
-## The database
-
-A small shop database seeded with deterministic demo data: `customers`,
-`products`, `orders` and `order_items` (20 customers, 15 products, 80 orders).
-
-## Project structure
+Say you ask:
 
 ```
-src/sqlagent/
-  config.py     paths, model and limits
-  database.py   connection and read-only query guard
-  seed.py       build the demo database
-  tools.py      tool definitions, dispatch and the calculator
-  agent.py      LLM tool-use loop
-  cli.py        command-line interface
-tests/          guards, tools and calculator
+Which category brings the most revenue?
 ```
 
-## Usage
+With `--verbose` on, you can watch the agent feel its way to the answer. It does not know the column names up front, so it looks first:
+
+```
+  -> list_tables({})
+  -> get_schema({'table': 'order_items'})
+  -> run_sql({'query': "SELECT p.category, SUM(p.price * oi.quantity) AS revenue
+                        FROM order_items oi
+                        JOIN orders o ON o.id = oi.order_id
+                        JOIN products p ON p.id = oi.product_id
+                        WHERE o.status = 'completed'
+                        GROUP BY p.category ORDER BY revenue DESC"})
+```
+
+and then replies, in this case, that **Home** is the top category. The exact query the model writes will vary from run to run; what stays fixed is that every number in the answer comes from a real tool result, not from the model's imagination.
+
+The underlying numbers, if you run that aggregation by hand against the seeded data, look like this:
+
+```
+Home         8947.78
+Electronics  4674.24
+Sports       2919.71
+Books        2031.03
+Toys         1395.00
+```
+
+## The loop
+
+The whole thing is a small back-and-forth. The model gets the question plus the list of tools. It either answers directly or asks to call a tool. If it asks for a tool, the toolbox runs it locally and feeds the result back, and the model gets another turn. That repeats until it produces a final answer or hits `MAX_STEPS` (6 by default), at which point the agent stops and says so rather than looping forever.
+
+```
+question -> model -> tool call -> local execution -> result -> model -> ... -> answer
+```
+
+The four tools available to it:
+
+- `list_tables` returns the table names.
+- `get_schema` returns one table's columns and their types.
+- `run_sql` runs a single read-only SELECT and hands back the rows as JSON.
+- `calculator` evaluates a plain arithmetic expression.
+
+## Keeping it read-only
+
+`run_sql` is the tool that touches the database, so it is deliberately fenced in. The connection itself is opened in SQLite read-only mode (`mode=ro`), which means a write would fail at the driver level even if everything else slipped through. On top of that, `run_select` does its own checking: it strips a trailing semicolon, rejects anything with a second statement, only accepts queries that begin with `SELECT` or `WITH`, turns away a list of write keywords (INSERT, UPDATE, DELETE, DROP, ALTER, PRAGMA and friends), and caps the result at `MAX_ROWS` (50) rows. So a query like `UPDATE products SET price = 0` never runs:
+
+```
+Error: Only SELECT queries are allowed.
+```
+
+The calculator is fenced off in a similar spirit. Instead of calling `eval`, it parses the expression into an AST and walks it, allowing only numeric constants and a handful of arithmetic operators. Something like `__import__('os').system('ls')` does not parse as arithmetic and is rejected outright.
+
+## The sample database
+
+There is a tiny shop schema to play against, seeded with a fixed random seed so the data is the same every time you build it: `customers`, `products`, `orders` and `order_items`, holding 20 customers, 15 products and 80 orders. Order statuses are weighted toward `completed`, with a few `shipped` and the occasional `cancelled`, which is why the revenue example above filters on completed orders.
+
+## Running it
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-python -m sqlagent.seed                                   # build the database
+python -m sqlagent.seed                                       # build data/shop.db
 python -m sqlagent.cli "Which category brings the most revenue?" --verbose
+```
+
+The agent calls an LLM, so the CLI expects an LLM API key in your environment (copy `.env.example` to `.env` and drop your key in). If the key is missing the CLI tells you so instead of failing halfway through. The tools and the database, on the other hand, need no key at all, which is handy for the tests:
+
+```bash
 pytest
 ```
 
-## Example
-
-The toolbox works without an API key. Running `run_sql` directly:
+## Where the code lives
 
 ```
-tables: ["customers", "order_items", "orders", "products"]
-
-revenue by category (completed orders):
-  Home         8947.78
-  Electronics  4674.24
-  Sports       2919.71
-  Books        2031.03
-  Toys         1395.00
-
-UPDATE products SET price=0  ->  Error: Only SELECT queries are allowed.
+src/sqlagent/
+  config.py     paths, model name and the limits (MAX_STEPS, MAX_ROWS)
+  database.py   connection handling and the read-only query guard
+  seed.py       builds the demo database
+  tools.py      the tool definitions, the dispatcher and the calculator
+  agent.py      the tool-use loop
+  cli.py        command-line entry point
+tests/          cover the SQL guard, the toolbox and the calculator
 ```
 
-With an LLM API key, asking *"Which category brings the most revenue?"*
-makes the agent inspect the schema, run the aggregation above and report **Home**
-as the top category - without the query being written by hand.
-
-## Possible improvements
-
-- Stream intermediate steps and add conversation memory.
-- A query-cost guard (row/time limits) and automatic `LIMIT` injection.
-- A self-correction step when a query returns an error.
+A few things that would be worth doing next: streaming the intermediate steps so you see the reasoning as it happens, letting the agent retry when a query comes back with an error, and adding automatic `LIMIT` injection as a second line of defence on query cost.
