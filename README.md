@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/delcenjo/llm-sql-agent/actions/workflows/ci.yml/badge.svg)
 
-A Claude-powered agent that answers natural-language questions about a SQL
+An LLM-powered agent that answers natural-language questions about a SQL
 database. Instead of hard-coding queries, the model is given a set of **tools**
 and decides which to call - inspecting the schema, writing SQL and doing
 arithmetic - until it can answer the question.
@@ -10,12 +10,12 @@ arithmetic - until it can answer the question.
 ## How it works
 
 ```
-question ─▶ Claude ─▶ tool call (get_schema / run_sql / calculator)
+question ─▶ LLM ─▶ tool call (get_schema / run_sql / calculator)
                 ▲                         │
                 └──── tool result ◀───────┘   (loop until the model answers)
 ```
 
-The agent runs a tool-use loop: Claude proposes a tool call, the toolbox
+The agent runs a tool-use loop: the LLM proposes a tool call, the toolbox
 executes it locally, the result is fed back, and the cycle repeats until the
 model produces a final answer (bounded by `MAX_STEPS`).
 
@@ -48,7 +48,7 @@ src/sqlagent/
   database.py   connection and read-only query guard
   seed.py       build the demo database
   tools.py      tool definitions, dispatch and the calculator
-  agent.py      Claude tool-use loop
+  agent.py      LLM tool-use loop
   cli.py        command-line interface
 tests/          guards, tools and calculator
 ```
@@ -81,7 +81,7 @@ revenue by category (completed orders):
 UPDATE products SET price=0  ->  Error: Only SELECT queries are allowed.
 ```
 
-With an `ANTHROPIC_API_KEY`, asking *"Which category brings the most revenue?"*
+With an LLM API key, asking *"Which category brings the most revenue?"*
 makes the agent inspect the schema, run the aggregation above and report **Home**
 as the top category - without the query being written by hand.
 
