@@ -4,8 +4,8 @@
 
 A Claude-powered agent that answers natural-language questions about a SQL
 database. Instead of hard-coding queries, the model is given a set of **tools**
-and decides which to call — inspecting the schema, writing SQL and doing
-arithmetic — until it can answer the question.
+and decides which to call - inspecting the schema, writing SQL and doing
+arithmetic - until it can answer the question.
 
 ## How it works
 
@@ -83,7 +83,7 @@ UPDATE products SET price=0  ->  Error: Only SELECT queries are allowed.
 
 With an `ANTHROPIC_API_KEY`, asking *"Which category brings the most revenue?"*
 makes the agent inspect the schema, run the aggregation above and report **Home**
-as the top category — without the query being written by hand.
+as the top category - without the query being written by hand.
 
 ## Possible improvements
 
