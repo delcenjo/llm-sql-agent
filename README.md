@@ -1,6 +1,9 @@
 # LLM SQL Agent
 
 ![CI](https://github.com/delcenjo/llm-sql-agent/actions/workflows/ci.yml/badge.svg)
+[![Live demo](https://img.shields.io/badge/Live_demo-Spaces-FFD21E?logo=huggingface&logoColor=000)](https://huggingface.co/spaces/delcenjo/sql-agent-demo)
+
+Try it live: ask a question at the [interactive demo](https://huggingface.co/spaces/delcenjo/sql-agent-demo).
 
 You ask a question in plain English, and the agent figures out the SQL on its own. There are no hand-written queries behind it: the model is handed a few tools and left to inspect the schema, write a SELECT, maybe do a bit of arithmetic, and come back with an answer.
 
